@@ -28,6 +28,8 @@ local WeaponService = require(script.Services.WeaponService)
 local DroneService = require(script.Services.DroneService)
 local LoadoutService = require(script.Services.LoadoutService)
 local PickupService = require(script.Services.PickupService)
+local SettingsService = require(script.Services.SettingsService)
+local WeaponVisualService = require(script.Services.WeaponVisualService)
 local VehicleControl = require(script.Vehicles.VehicleControl)
 local VehicleSpawner = require(script.Vehicles.VehicleSpawner)
 
@@ -40,6 +42,8 @@ local ctx = {
 	Drone = DroneService,
 	Loadout = LoadoutService,
 	Pickups = PickupService,
+	Settings = SettingsService,
+	WeaponVisual = WeaponVisualService,
 	VehicleControl = VehicleControl,
 	Spawner = VehicleSpawner,
 }
@@ -50,8 +54,10 @@ ExplosivesService.Init(ctx)
 WeaponService.Init(ctx)
 DroneService.Init(ctx)
 VehicleControl.Init(ctx)
+SettingsService.Init(ctx)
+WeaponVisualService.Init(ctx)
 LoadoutService.Init(ctx)
 PickupService.Init(ctx, mapData.ContainerSpawns)
 VehicleSpawner.Init(ctx, mapData)
 
-print("[Frontline] Сервер готов: карта, оружие, техника, контейнеры, дроны — ONLINE")
+print("[Frontline] Сервер готов: карта x4, оружие, техника, контейнеры, дроны, настройки — ONLINE")

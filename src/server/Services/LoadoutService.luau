@@ -4,8 +4,7 @@
 -- С собой: автомат, пистолет, C4 + детонатор, ПТ-мины, планшет FPV.
 -- ПКМ и СВ-98 выдаёт PickupService из контейнеров.
 --
--- Инструменты создаются кодом (RequiresHandle=false): 3D-модели оружия —
--- это арт, который добавляется позже без изменения логики.
+-- При экипировке инструмента WeaponVisualService крепит модель в правую руку.
 -- ============================================================================
 
 local Players = game:GetService("Players")
@@ -41,9 +40,15 @@ function LoadoutService.MakeTool(player: Player, weaponId: string): Tool
 
 	tool.Equipped:Connect(function()
 		ctx.Weapons.OnToolEquipped(player, weaponId)
+		if ctx.WeaponVisual then
+			ctx.WeaponVisual.Attach(player, weaponId)
+		end
 	end)
 	tool.Unequipped:Connect(function()
 		ctx.Weapons.OnToolUnequipped(player, weaponId)
+		if ctx.WeaponVisual then
+			ctx.WeaponVisual.Detach(player, weaponId)
+		end
 	end)
 
 	tool.Parent = player.Backpack

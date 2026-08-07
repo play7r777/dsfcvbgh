@@ -6,6 +6,7 @@
 -- GravityFactor — множитель гравитации workspace для траектории снаряда
 -- (падение пули). 1 = полная гравитация, 0 = прямой выстрел.
 -- VehicleDamage — множитель урона по классам техники { Light, Tank }.
+-- Recoil — отдача камеры ВВЕРХ (Kick, градусы) и случайная в бок (Yaw).
 -- ============================================================================
 
 local DamageTypes = require(script.Parent.Parent.Combat.DamageTypes)
@@ -27,6 +28,7 @@ local Weapons = {
 		ReserveAmmo = 210,
 		ReloadTime = 2.3,
 		Bloom = { Base = 0.5, PerShot = 0.35, Max = 4.0, Recovery = 7 }, -- градусы
+		Recoil = { Kick = 0.8, Yaw = 0.25 },
 		VehicleDamage = { Light = 1.0, Tank = 0.0 }, -- танк пулям не по зубам
 		SoundId = 0, -- TODO: rbxassetid выстрела
 	},
@@ -47,6 +49,7 @@ local Weapons = {
 		ReserveAmmo = 96,
 		ReloadTime = 1.7,
 		Bloom = { Base = 0.4, PerShot = 0.25, Max = 2.2, Recovery = 10 },
+		Recoil = { Kick = 1.0, Yaw = 0.3 },
 		VehicleDamage = { Light = 0.5, Tank = 0.0 },
 		SoundId = 0,
 	},
@@ -69,6 +72,7 @@ local Weapons = {
 		Bloom = { Base = 0.05, PerShot = 0.0, Max = 0.05, Recovery = 20 }, -- в прицеле
 		HipBloom = 5.0, -- от бедра снайперка почти бесполезна
 		ScopeFOV = 12, -- оптический прицел
+		Recoil = { Kick = 5.0, Yaw = 0.6 },
 		VehicleDamage = { Light = 1.0, Tank = 0.05 },
 		SoundId = 0,
 	},
@@ -89,6 +93,7 @@ local Weapons = {
 		ReserveAmmo = 200,
 		ReloadTime = 5.2,
 		Bloom = { Base = 0.9, PerShot = 0.3, Max = 5.5, Recovery = 5 },
+		Recoil = { Kick = 0.55, Yaw = 0.35 },
 		-- Перегрев ствола: 100 единиц шкалы
 		Overheat = { PerShot = 2.2, CoolPerSec = 16, VentTime = 3.5 },
 		SuppressionRadius = 9, -- эффект подавления рядом с трассой
@@ -112,6 +117,7 @@ local Weapons = {
 		ReserveAmmo = 4,
 		ReloadTime = 3.8,
 		Bloom = { Base = 0.3, PerShot = 0, Max = 0.3, Recovery = 5 },
+		Recoil = { Kick = 3.0, Yaw = 0.4 },
 		Splash = { Radius = 14, Damage = 140, Type = DamageTypes.HE }, -- фугасный осколочный круг
 		VehicleDamage = { Light = 1.0, Tank = 1.0 },
 		SoundId = 0,
@@ -125,10 +131,26 @@ local Charges = {
 	DroneWarhead = { DirectDamage = 750, DirectType = DamageTypes.HEAT, SplashRadius = 9, SplashDamage = 160, SplashType = DamageTypes.HE },
 }
 
+-- Mesh-ассеты (FBX из tools/blender/build_assets.py). После импорта в Roblox
+-- впишите сюда asset id — WeaponVisualService подставит MeshPart вместо
+-- процедурной модели. 0 = использовать процедурную модель из кода.
+local MeshIds = {
+	AssaultRifle = 0,
+	Pistol = 0,
+	SniperRifle = 0,
+	LMG = 0,
+	RPG = 0,
+	C4Charge = 0,
+	Detonator = 0,
+	Landmine = 0,
+	DroneTablet = 0,
+}
+
 local WeaponConfig = {}
 
 WeaponConfig.Weapons = Weapons
 WeaponConfig.Charges = Charges
+WeaponConfig.MeshIds = MeshIds
 
 function WeaponConfig.Get(id: string)
 	return Weapons[id]

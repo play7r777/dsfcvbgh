@@ -29,6 +29,10 @@ local REMOTE_NAMES = {
 	"Vehicle_Event", -- s->c: ("State", id, snapshot) | ("Destroyed", id, attackerName, label)
 	-- Прочее
 	"Killfeed", -- s->c: attackerName?, victimLabel, weaponId
+	-- Настройки клиента
+	"Settings_Request", -- c->s
+	"Settings_Load", -- s->c: table
+	"Settings_Save", -- c->s: table
 }
 
 local Remotes = {}

@@ -3,8 +3,10 @@
 -- WeaponController — клиентская сторона оружия.
 --   * мгновенный локальный трассер/звук (отзывчивость), сервер всё валидирует
 --   * детерминированный разброс по seed (клиент и сервер считают одинаково)
---   * динамический прицел: зазор = разброс
---   * оптический прицел СВД (FOV-зум + маска), перегрев ПКМ (локальное зеркало)
+--   * отдача камеры ВВЕРХ: пружина, применяется ПОСЛЕ камер-скрипта
+--     (BindToRenderStep Camera+1), с возвратом вниз
+--   * прицеливание: СВД — оптика (FOV-зум + маска), прочее — AimFOV из настроек
+--   * прицел: статичный/динамический, зазор и цвет — из настроек (Settings)
 --   * инструменты: C4 (рейкаст до 4 м), детонатор, ПТ-мины
 -- ============================================================================
 
@@ -34,6 +36,12 @@ local ammoCache = {} -- [weaponId] = { Mag, Reserve } (авторитет от �
 local nextShotAt = 0
 local burst = 0
 local burstLast = 0
+
+-- Отдача: состояние пружины (радианы)
+local RECOIL_K = 90 -- жёсткость возврата
+local RECOIL_D = 14 -- демпфирование
+local recoilP, recoilY = 0, 0 -- текущий сдвиг (тангаж вверх, рыскание)
+local recoilVelP, recoilVelY = 0, 0
 
 -- ---------------------------------------------------------------------------
 -- Звук (placeholder: SoundId == 0 => тишина)
@@ -70,22 +78,32 @@ local function setZoom(fov: number)
 	if not cam then
 		cam = Workspace.CurrentCamera
 	end
+	if not cam then
+		return
+	end
 	local tween = TweenService:Create(cam, TweenInfo.new(0.12, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), { FieldOfView = fov })
 	tween:Play()
 end
 
+local function aimFOV(): number
+	if ctx.Settings then
+		return ctx.Settings.Get("AimFOV")
+	end
+	return 58
+end
+
+-- Безопасно для нестрелковых инструментов (C4/детонатор/мина/планшет):
+-- у них нет Cfg, прицеливание просто отключается.
 local function updateAim()
-	if not current then
-		return
-	end
-	local cfg = current.Cfg
-	if not cfg.ScopeFOV then
-		return
-	end
-	local scoped = current.Scoped
-	if scoped then
+	local cfg = current and current.Cfg
+	local scoped = current ~= nil and current.Scoped == true
+
+	if cfg and cfg.ScopeFOV and scoped then
 		setZoom(cfg.ScopeFOV)
 		ctx.HUD.SetScope(true)
+	elseif cfg and scoped then
+		setZoom(aimFOV())
+		ctx.HUD.SetScope(false)
 	else
 		setZoom(baseFOV)
 		ctx.HUD.SetScope(false)
@@ -159,7 +177,11 @@ local function tryFire()
 
 	ammo.Mag -= 1
 	ctx.HUD.SetAmmo(ammo.Mag, ammo.Reserve)
-	ctx.HUD.SetCrosshairGap(6 + bloom * 3.2)
+
+	-- динамический прицел (только если включён в настройках)
+	if ctx.Settings and ctx.Settings.Get("CrosshairDynamic") then
+		ctx.HUD.SetCrosshairTarget(ctx.Settings.Get("CrosshairGap") + bloom * 3.2)
+	end
 
 	-- локальный трассер + звук (визуал)
 	local origin = cam.CFrame.Position
@@ -182,14 +204,10 @@ local function tryFire()
 	end)
 	playSound(current.Id, origin)
 
-	-- лёгкая отдача камеры
-	if cfg.FireMode == "Auto" then
-		cam.CFrame = cam.CFrame * CFrame.Angles(-0.0025, 0, 0)
-	elseif cfg.Id == "SniperRifle" then
-		cam.CFrame = cam.CFrame * CFrame.Angles(-0.015, 0, 0)
-	else
-		cam.CFrame = cam.CFrame * CFrame.Angles(-0.004, 0, 0)
-	end
+	-- ОТДАЧА: пружина ВВЕРХ (положительный тангаж) + лёгкий случайный увод
+	local recoil = cfg.Recoil or { Kick = 0.8, Yaw = 0.2 }
+	recoilVelP += math.rad(recoil.Kick) * math.sqrt(RECOIL_K)
+	recoilVelY += rng:NextNumber(-1, 1) * math.rad(recoil.Yaw) * math.sqrt(RECOIL_K)
 
 	-- перегрев ПКМ (зеркало; сервер поправит)
 	if cfg.Overheat then
@@ -324,7 +342,6 @@ local function trackTool(tool: Tool)
 			ctx.HUD.SetAmmo(ammo and ammo.Mag, ammo and ammo.Reserve)
 			ctx.HUD.SetCrosshairVisible(true)
 			ctx.HUD.SetHeat(current.Cfg.Overheat and 0 or nil)
-			ctx.HUD.SetCrosshairGap(8)
 		else
 			ctx.HUD.SetWeapon(id)
 			ctx.HUD.SetAmmo(nil)
@@ -337,12 +354,12 @@ local function trackTool(tool: Tool)
 		if current and current.Id == id then
 			firing = false
 			current.Scoped = false
+			current = nil
 			updateAim()
 			ctx.HUD.SetScope(false)
 			ctx.HUD.SetCrosshairVisible(false)
 			ctx.HUD.SetHeat(nil)
 			ctx.HUD.SetAmmo(nil)
-			current = nil
 		end
 	end)
 
@@ -352,6 +369,28 @@ end
 -- ---------------------------------------------------------------------------
 function WeaponController.Init(deps)
 	ctx = deps
+
+	-- Отдача применяется ПОСЛЕ стандартного камер-скрипта (иначе он её затирает)
+	RunService:BindToRenderStep("ArenaRecoil", Enum.RenderPriority.Camera.Value + 1, function(dt)
+		if recoilP == 0 and recoilY == 0 and recoilVelP == 0 and recoilVelY == 0 then
+			return
+		end
+		-- пружина к нулю
+		recoilVelP += (-RECOIL_K * recoilP - RECOIL_D * recoilVelP) * dt
+		recoilVelY += (-RECOIL_K * recoilY - RECOIL_D * recoilVelY) * dt
+		recoilP += recoilVelP * dt
+		recoilY += recoilVelY * dt
+		if math.abs(recoilP) < 1e-4 and math.abs(recoilVelP) < 1e-4 then
+			recoilP, recoilVelP = 0, 0
+		end
+		if math.abs(recoilY) < 1e-4 and math.abs(recoilVelY) < 1e-4 then
+			recoilY, recoilVelY = 0, 0
+		end
+		local camera = Workspace.CurrentCamera
+		if camera then
+			camera.CFrame = camera.CFrame * CFrame.Angles(recoilP, recoilY, 0)
+		end
+	end)
 
 	-- синхронизация с сервером (боеприпасы/перегрев/перезарядка)
 	ctx.Remotes.Get("Weapon_Sync").OnClientEvent:Connect(function(payload)
@@ -378,7 +417,7 @@ function WeaponController.Init(deps)
 				end)
 			end
 		end
-		if payload.ReloadIn and payload.ReloadIn > 0 then
+		if payload.ReloadIn and payload.ReloadIn > 0 and current then
 			current.ReloadEnd = os.clock() + payload.ReloadIn
 			ctx.HUD.SetReloading(true)
 			task.delay(payload.ReloadIn, function()
@@ -435,9 +474,9 @@ function WeaponController.Init(deps)
 		end
 	end)
 
-	-- прицеливание (ПКМ)
+	-- прицеливание (ПКМ) — только для оружия с Cfg
 	UserInputService.InputBegan:Connect(function(input, gameProcessed)
-		if gameProcessed or not current then
+		if gameProcessed or not current or not current.Cfg then
 			return
 		end
 		if input.UserInputType == Enum.UserInputType.MouseButton2 then
@@ -452,14 +491,13 @@ function WeaponController.Init(deps)
 		end
 	end)
 
-	-- цикл автоматического огня
-	RunService.Heartbeat:Connect(function()
+	-- цикл автоматического огня + охлаждение ствола (зеркало)
+	RunService.Heartbeat:Connect(function(dt)
 		if firing then
 			tryFire()
 		end
-		-- охлаждение ствола (зеркало)
 		if current and current.Cfg and current.Cfg.Overheat and current.Heat > 0 and os.clock() > (current.VentUntil or 0) then
-			current.Heat = math.max(0, current.Heat - current.Cfg.Overheat.CoolPerSec / 60)
+			current.Heat = math.max(0, current.Heat - current.Cfg.Overheat.CoolPerSec * dt)
 			ctx.HUD.SetHeat(current.Heat / 100)
 		end
 	end)

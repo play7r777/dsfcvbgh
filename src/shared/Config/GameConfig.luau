@@ -6,7 +6,7 @@
 
 local GameConfig = {
 	-- Размеры арены (карта генерируется процедурно на старте сервера)
-	ArenaSize = Vector3.new(460, 0, 460), -- игровое поле по X/Z
+	ArenaSize = Vector3.new(1840, 0, 1840), -- поле 1840x1840 (x4 от первой версии)
 	GroundTopY = 0, -- верх плиты земли
 	GroundThickness = 10,
 	PerimeterHeight = 24, -- скалы по периметру
@@ -39,8 +39,8 @@ local GameConfig = {
 	-- FPV дрон-камикадзе
 	Drone = {
 		BatterySeconds = 60, -- заряд батареи
-		MaxRange = 340, -- радиус уверенного видеоканала (дальше — потеря связи)
-		MaxSpeed = 58, -- studs/s
+		MaxRange = 600, -- радиус уверенного видеоканала (карта выросла x4)
+		MaxSpeed = 70, -- studs/s
 		Acceleration = 9, -- плавность разгона (damp-фактор)
 		ExplodeSpeed = 24, -- скорость столкновения для подрыва боевой части
 		RespawnCooldown = 25, -- кулдаун планшета после потери дрона

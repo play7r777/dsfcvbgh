@@ -1,9 +1,9 @@
 --!nonstrict
 -- ============================================================================
 -- HUD — весь интерфейс арены, построенный кодом (без ассетов):
--- прицел с динамическим разбросом, хитмаркер, боеприпасы, перегрев ПКМ,
--- батарея/сигнал FPV-дрона, киллфид, панель модулей техники, снайперская
--- оптика (чёрная маска с круглым окуляром), подавление.
+-- прицел (настраиваемый: зазор/цвет/динамика — SettingsController),
+-- хитмаркер, боеприпасы, перегрев ПКМ, батарея/сигнал FPV-дрона, киллфид,
+-- панель модулей техники, снайперская оптика, подавление.
 -- ============================================================================
 
 local Players = game:GetService("Players")
@@ -18,6 +18,16 @@ local refs = {}
 local ACCENT = Color3.fromRGB(255, 190, 80)
 local PANEL = Color3.fromRGB(14, 17, 14)
 local WHITE = Color3.fromRGB(235, 235, 230)
+
+-- Стиль прицела (управляется настройками)
+local crosshair = {
+	BaseGap = 4, -- статичный зазор по умолчанию (маленький)
+	TargetGap = 4,
+	DisplayedGap = 4,
+	Color = WHITE,
+	Dynamic = false,
+	Visible = false,
+}
 
 local function frame(parent, props): Frame
 	local f = Instance.new("Frame")
@@ -54,18 +64,18 @@ local function build()
 	gui.IgnoreGuiInset = true
 	gui.Parent = playerGui
 
-	-- ПРИЦЕЛ (4 риски, зазор зависит от разброса)
+	-- ПРИЦЕЛ (4 риски; зазор/цвет/динамика — из настроек)
 	local cross = {}
 	for i = 1, 4 do
 		cross[i] = frame(gui, {
 			Name = "Cross" .. i,
 			AnchorPoint = Vector2.new(0.5, 0.5),
-			BackgroundColor3 = WHITE,
+			BackgroundColor3 = crosshair.Color,
 			Size = UDim2.fromOffset(2, 10),
+			Visible = false,
 		})
 	end
 	refs.Cross = cross
-	refs.CrossGap = 8
 
 	-- ХИТМАРКЕР
 	local hit = {}
@@ -172,7 +182,7 @@ local function build()
 	})
 	refs.DronePanel = dronePanel
 
-	-- Помехи видеоканала (мёрзнущий белый шум)
+	-- Помехи видеоканала
 	refs.Interference = frame(gui, {
 		Name = "Interference",
 		Size = UDim2.fromScale(1, 1),
@@ -237,7 +247,6 @@ local function build()
 		Text = "",
 	})
 
-	-- строки модулей
 	local rows = {
 		{ key = "Hull", title = "Корпус" },
 		{ key = "TrackL", title = "Гусеница Л" },
@@ -306,19 +315,23 @@ end
 function HUD.Init()
 	build()
 
-	-- прицел перестраивается при смене зазора
-	RunService.RenderStepped:Connect(function()
-		local gap = refs.CrossGap
-		local cross = refs.Cross
-		if not cross[1].Parent then
-			return
+	RunService.RenderStepped:Connect(function(dt)
+		-- плавное схлопывание динамического зазора обратно к базе
+		if crosshair.TargetGap > crosshair.BaseGap then
+			crosshair.TargetGap = math.max(crosshair.BaseGap, crosshair.TargetGap - 60 * dt)
 		end
-		cross[1].Position = UDim2.new(0.5, 0, 0.5, -(gap + 5))
-		cross[2].Position = UDim2.new(0.5, 0, 0.5, gap + 5)
-		cross[3].Position = UDim2.new(0.5, -(gap + 5), 0.5, 0)
-		cross[4].Position = UDim2.new(0.5, gap + 5, 0.5, 0)
-		cross[3].Size = UDim2.fromOffset(10, 2)
-		cross[4].Size = UDim2.fromOffset(10, 2)
+		crosshair.DisplayedGap += (crosshair.TargetGap - crosshair.DisplayedGap) * math.min(1, 14 * dt)
+
+		local gap = crosshair.DisplayedGap
+		local cross = refs.Cross
+		if cross[1].Parent then
+			cross[1].Position = UDim2.new(0.5, 0, 0.5, -(gap + 5))
+			cross[2].Position = UDim2.new(0.5, 0, 0.5, gap + 5)
+			cross[3].Position = UDim2.new(0.5, -(gap + 5), 0.5, 0)
+			cross[4].Position = UDim2.new(0.5, gap + 5, 0.5, 0)
+			cross[3].Size = UDim2.fromOffset(10, 2)
+			cross[4].Size = UDim2.fromOffset(10, 2)
+		end
 
 		-- помехи видеоканала
 		local noise = refs.Interference
@@ -339,6 +352,35 @@ function HUD.Init()
 	end)
 end
 
+-- Стиль прицела из настроек: { Gap, Color, Dynamic }
+function HUD.SetCrosshairStyle(style)
+	if style.Gap then
+		crosshair.BaseGap = style.Gap
+		if not crosshair.Dynamic then
+			crosshair.TargetGap = style.Gap
+		end
+	end
+	if style.Color then
+		crosshair.Color = style.Color
+		for _, f in ipairs(refs.Cross) do
+			f.BackgroundColor3 = style.Color
+		end
+	end
+	if style.Dynamic ~= nil then
+		crosshair.Dynamic = style.Dynamic
+		if not style.Dynamic then
+			crosshair.TargetGap = crosshair.BaseGap
+		end
+	end
+end
+
+-- Целевой зазор (только когда включён динамический режим)
+function HUD.SetCrosshairTarget(px: number)
+	if crosshair.Dynamic then
+		crosshair.TargetGap = math.max(crosshair.BaseGap, px)
+	end
+end
+
 function HUD.SetWeapon(name: string)
 	refs.WeaponName.Text = name
 end
@@ -356,13 +398,12 @@ function HUD.SetReloading(active: boolean)
 end
 
 function HUD.SetVenting(active: boolean)
-	refs.Reload.Text = active and "ПЕРЕГРЕВ СТВОЛА!" or refs.Reload.Text
 	if active then
 		refs.Reload.Text = "ПЕРЕГРЕВ СТВОЛА!"
 	end
 end
 
-function HUD.SetHeat(frac: number?, venting: boolean?)
+function HUD.SetHeat(frac: number?)
 	refs.HeatBG.Visible = frac ~= nil
 	if frac then
 		refs.HeatFill.Size = UDim2.fromScale(math.clamp(frac, 0, 1), 1)
@@ -370,11 +411,8 @@ function HUD.SetHeat(frac: number?, venting: boolean?)
 	end
 end
 
-function HUD.SetCrosshairGap(px: number)
-	refs.CrossGap = px
-end
-
 function HUD.SetCrosshairVisible(visible: boolean)
+	crosshair.Visible = visible
 	for _, f in ipairs(refs.Cross) do
 		f.Visible = visible
 	end

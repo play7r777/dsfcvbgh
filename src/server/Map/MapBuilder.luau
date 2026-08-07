@@ -1,12 +1,12 @@
 --!nonstrict
 -- ============================================================================
--- MapBuilder — процедурная генерация PvP-арены на старте сервера.
--- Никаких бинарных ассетов: земля и скалы — Terrain, окопы выкапываются
--- Air-заливкой, укрытия/руины/площадки — обычные Part'ы.
+-- MapBuilder — процедурная генерация PvP-арены на старте сервера (карта x4:
+-- поле 1840x1840). Никаких бинарных ассетов: земля и скалы — Terrain,
+-- окопы выкапываются Air-заливкой, укрытия/руины/площадки — Part'ы.
 --
--- Схема карты (вид сверху, 460x460):
---   - две линии окопов-«зигзага» на x=-70 и x=+70 (запад/восток)
---   - три соединительных траншеи между ними (z=-75, 0, +75)
+-- Схема карты (вид сверху):
+--   - две линии окопов-«зигзага» на x=-280 и x=+280 (запад/восток)
+--   - три соединительные траншеи между ними (z=-300, 0, +300)
 --   - руины в центре (хардпоинт), мешки с песком вдоль окопов
 --   - площадки техники по углам/краям, 8 точек спавна игроков
 -- ============================================================================
@@ -24,6 +24,11 @@ local SAND = Enum.Material.Sand
 local CONCRETE = Enum.Material.Concrete
 local WOOD = Enum.Material.Wood
 local AIR = Enum.Material.Air
+
+-- Линии фронта (координаты карты x4)
+local FRONT_X = 280 -- линии окопов на x = ±FRONT_X
+local FRONT_Z = 600 -- окопы тянутся по z от -FRONT_Z до +FRONT_Z
+local COMM_Z = { -300, 0, 300 } -- соединительные траншеи
 
 local function fill(cframe: CFrame, size: Vector3, material: any)
 	Workspace.Terrain:FillBlock(cframe, size, material)
@@ -85,12 +90,12 @@ local function buildTrenchLines(parent: Folder)
 	local width = GameConfig.TrenchWidth
 
 	-- две противоположные линии фронта
-	buildZigzag(-70, -150, 150, 25, 10, depth, width, parent)
-	buildZigzag(70, -150, 150, 25, 10, depth, width, parent)
+	buildZigzag(-FRONT_X, -FRONT_Z, FRONT_Z, 30, 12, depth, width, parent)
+	buildZigzag(FRONT_X, -FRONT_Z, FRONT_Z, 30, 12, depth, width, parent)
 
 	-- соединительные траншеи (сообщения между линиями)
-	for _, z in ipairs({ -75, 0, 75 }) do
-		dig(Vector3.new(0, 0, z), Vector3.new(140 + width, 0, width), depth)
+	for _, z in ipairs(COMM_Z) do
+		dig(Vector3.new(0, 0, z), Vector3.new(FRONT_X * 2 + width, 0, width), depth)
 	end
 end
 
@@ -115,25 +120,32 @@ end
 
 local function scatterCover(parent: Folder)
 	local rng = Random.new(1337)
-	for i = 1, 22 do
-		local x = rng:NextNumber(-200, 200)
-		local z = rng:NextNumber(-200, 200)
+	local half = GameConfig.ArenaSize.X / 2 - 60
+	for i = 1, 90 do
+		local x = rng:NextNumber(-half, half)
+		local z = rng:NextNumber(-half, half)
 		-- не ставим укрытия на линии окопов и в центре
-		local nearTrenchX = (math.abs(x - 70) < 12 or math.abs(x + 70) < 12) and math.abs(z) < 160
-		local nearTrenchZ = (math.abs(z) < 8 or math.abs(z - 75) < 8 or math.abs(z + 75) < 8) and math.abs(x) < 80
+		local nearTrenchX = (math.abs(x - FRONT_X) < 16 or math.abs(x + FRONT_X) < 16) and math.abs(z) < FRONT_Z + 20
+		local nearTrenchZ = false
+		for _, cz in ipairs(COMM_Z) do
+			if math.abs(z - cz) < 8 and math.abs(x) < FRONT_X + 20 then
+				nearTrenchZ = true
+			end
+		end
 		if not nearTrenchX and not nearTrenchZ and Vector3.new(x, 0, z).Magnitude > 45 then
-			local s = rng:NextNumber(3, 6.5)
+			local s = rng:NextNumber(3, 7)
 			part("Cover" .. i, Vector3.new(s, s * 0.8, s), CFrame.new(x, s * 0.4, z) * CFrame.Angles(0, rng:NextNumber(0, math.pi), 0), ROCK, Color3.fromRGB(99, 95, 88), parent)
 		end
 	end
 end
 
 local function buildSpawnLocations(parent: Folder)
+	local S = 820
 	local spots = {
-		Vector3.new(-200, 0, -200), Vector3.new(200, 0, 200),
-		Vector3.new(-200, 0, 200), Vector3.new(200, 0, -200),
-		Vector3.new(-200, 0, 0), Vector3.new(200, 0, 0),
-		Vector3.new(0, 0, -200), Vector3.new(0, 0, 200),
+		Vector3.new(-S, 0, -S), Vector3.new(S, 0, S),
+		Vector3.new(-S, 0, S), Vector3.new(S, 0, -S),
+		Vector3.new(-S, 0, 0), Vector3.new(S, 0, 0),
+		Vector3.new(0, 0, -S), Vector3.new(0, 0, S),
 	}
 	for i, pos in ipairs(spots) do
 		local sp = Instance.new("SpawnLocation")
@@ -179,13 +191,14 @@ function MapBuilder.Build()
 
 	-- Площадки техники
 	local tankPads = {
-		CFrame.new(-160, 0, -160) * CFrame.Angles(0, math.rad(45), 0),
-		CFrame.new(160, 0, 160) * CFrame.Angles(0, math.rad(-135), 0),
+		CFrame.new(-640, 0, -640) * CFrame.Angles(0, math.rad(45), 0),
+		CFrame.new(640, 0, 640) * CFrame.Angles(0, math.rad(-135), 0),
 	}
 	local bikePads = {
-		CFrame.new(0, 0, -190),
-		CFrame.new(0, 0, 190) * CFrame.Angles(0, math.rad(180), 0),
-		CFrame.new(-190, 0, 30) * CFrame.Angles(0, math.rad(90), 0),
+		CFrame.new(0, 0, -760),
+		CFrame.new(0, 0, 760) * CFrame.Angles(0, math.rad(180), 0),
+		CFrame.new(-760, 0, 120) * CFrame.Angles(0, math.rad(90), 0),
+		CFrame.new(760, 0, -120) * CFrame.Angles(0, math.rad(-90), 0),
 	}
 	for i, cf in ipairs(tankPads) do
 		buildPad("TankPad" .. i, cf, Vector3.new(16, 0.5, 22), folderMap)
@@ -196,16 +209,20 @@ function MapBuilder.Build()
 
 	-- Точки контейнеров снабжения (ПКМ/СВД/мины/C4/боеприпасы)
 	local containerSpawns = {
-		CFrame.new(4, 0, -12), -- центр, руины
-		CFrame.new(-10, 0, 8), -- центр, руины
-		CFrame.new(-70, 0, -80), -- западные окопы, север
-		CFrame.new(-70, 0, 90), -- западные окопы, юг
-		CFrame.new(70, 0, 80), -- восточные окопы, север
-		CFrame.new(70, 0, -90), -- восточные окопы, юг
-		CFrame.new(0, 0, -75), -- траншея сообщения
-		CFrame.new(0, 0, 75), -- траншея сообщения
-		CFrame.new(-140, 0, 0), -- середина, запад
-		CFrame.new(140, 0, 0), -- середина, восток
+		CFrame.new(16, 0, -48), -- центр, руины
+		CFrame.new(-40, 0, 32), -- центр, руины
+		CFrame.new(-FRONT_X, 0, -320), -- западные окопы, север
+		CFrame.new(-FRONT_X, 0, 360), -- западные окопы, юг
+		CFrame.new(FRONT_X, 0, 320), -- восточные окопы, север
+		CFrame.new(FRONT_X, 0, -360), -- восточные окопы, юг
+		CFrame.new(0, 0, -300), -- траншея сообщения
+		CFrame.new(0, 0, 300), -- траншея сообщения
+		CFrame.new(-560, 0, 0), -- середина, запад
+		CFrame.new(560, 0, 0), -- середина, восток
+		CFrame.new(0, 0, 600), -- ничейная земля, юг
+		CFrame.new(0, 0, -600), -- ничейная земля, север
+		CFrame.new(560, 0, 560), -- у танковой площадки
+		CFrame.new(-560, 0, -560), -- у танковой площадки
 	}
 
 	return {

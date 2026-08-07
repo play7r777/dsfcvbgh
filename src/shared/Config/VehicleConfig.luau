@@ -47,9 +47,9 @@ local VehicleConfig = {
 		-- Фугас бонусно срывает гусеницы
 		HETrackBonus = 1.5,
 
-		-- Динамика (аркадный привод через LinearVelocity)
-		MoveSpeed = 17, -- studs/s вперёд
-		ReverseSpeed = 8,
+		-- Динамика (аркадный привод через LinearVelocity; карта x4 -> быстрее)
+		MoveSpeed = 26, -- studs/s вперёд
+		ReverseSpeed = 10,
 		TurnDegPerSec = 45,
 
 		-- Главная пушка (APFSDS, кинетика) + лёгкий фугасный круг
@@ -70,9 +70,9 @@ local VehicleConfig = {
 		HullHP = 150, -- нулевая броня: мина/ПКМ/автомат быстро решают
 		Modules = {},
 		ZoneMultipliers = {},
-		MoveSpeed = 42,
-		ReverseSpeed = 10,
-		TurnDegPerSec = 90,
+		MoveSpeed = 64,
+		ReverseSpeed = 16,
+		TurnDegPerSec = 95,
 	},
 }
 
