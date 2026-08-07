@@ -11,6 +11,7 @@ local RunService = game:GetService("RunService")
 
 local HUD = {}
 HUD._signalLevel = 0
+HUD._menuOpen = false
 
 local gui: ScreenGui
 local refs = {}
@@ -91,58 +92,15 @@ local function build()
 	end
 	refs.Hit = hit
 
-	-- БОЕПРИПАСЫ (правый нижний угол)
-	local ammoPanel = frame(gui, {
-		Name = "AmmoPanel",
+	-- БОЕПРИПАСЫ (правый нижний угол, без панели и названия оружия)
+	refs.Ammo = label(gui, {
+		Name = "AmmoCount",
 		AnchorPoint = Vector2.new(1, 1),
 		Position = UDim2.new(1, -24, 1, -24),
-		Size = UDim2.fromOffset(220, 86),
-		BackgroundColor3 = PANEL,
-		BackgroundTransparency = 0.35,
-	})
-	Instance.new("UICorner", ammoPanel).CornerRadius = UDim.new(0, 8)
-
-	refs.WeaponName = label(ammoPanel, {
-		Name = "WeaponName",
-		Position = UDim2.new(0, 12, 0, 6),
-		Size = UDim2.new(1, -24, 0, 20),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextSize = 14,
-		TextColor3 = ACCENT,
-		Text = "",
-	})
-	refs.Ammo = label(ammoPanel, {
-		Name = "AmmoCount",
-		Position = UDim2.new(0, 12, 0, 24),
-		Size = UDim2.new(1, -24, 0, 34),
-		TextXAlignment = Enum.TextXAlignment.Left,
+		Size = UDim2.fromOffset(180, 40),
+		TextXAlignment = Enum.TextXAlignment.Right,
 		TextSize = 28,
 		Text = "",
-	})
-	refs.Reload = label(ammoPanel, {
-		Name = "Reload",
-		Position = UDim2.new(0, 12, 0, 60),
-		Size = UDim2.new(1, -24, 0, 18),
-		TextXAlignment = Enum.TextXAlignment.Left,
-		TextSize = 12,
-		TextColor3 = Color3.fromRGB(255, 120, 90),
-		Text = "",
-	})
-
-	-- ПЕРЕГРЕВ ПКМ
-	local heatBG = frame(ammoPanel, {
-		Name = "HeatBG",
-		AnchorPoint = Vector2.new(0, 1),
-		Position = UDim2.new(0, 12, 1, -8),
-		Size = UDim2.new(1, -24, 0, 6),
-		BackgroundColor3 = Color3.fromRGB(50, 50, 48),
-		Visible = false,
-	})
-	refs.HeatBG = heatBG
-	refs.HeatFill = frame(heatBG, {
-		Name = "Fill",
-		Size = UDim2.fromScale(0, 1),
-		BackgroundColor3 = Color3.fromRGB(255, 120, 50),
 	})
 
 	-- FPV: батарея + сигнал (низ по центру)
@@ -381,40 +339,37 @@ function HUD.SetCrosshairTarget(px: number)
 	end
 end
 
-function HUD.SetWeapon(name: string)
-	refs.WeaponName.Text = name
+function HUD.SetWeapon(_name: string)
 end
 
 function HUD.SetAmmo(mag: number?, reserve: number?)
 	if mag == nil then
 		refs.Ammo.Text = ""
 	else
-		refs.Ammo.Text = tostring(mag) .. " / " .. tostring(reserve or 0)
+		refs.Ammo.Text = tostring(mag) .. "/" .. tostring(reserve or 0)
 	end
 end
 
-function HUD.SetReloading(active: boolean)
-	refs.Reload.Text = active and "ПЕРЕЗАРЯДКА..." or ""
+function HUD.SetReloading(_active: boolean)
 end
 
-function HUD.SetVenting(active: boolean)
-	if active then
-		refs.Reload.Text = "ПЕРЕГРЕВ СТВОЛА!"
-	end
+function HUD.SetVenting(_active: boolean)
 end
 
-function HUD.SetHeat(frac: number?)
-	refs.HeatBG.Visible = frac ~= nil
-	if frac then
-		refs.HeatFill.Size = UDim2.fromScale(math.clamp(frac, 0, 1), 1)
-		refs.HeatFill.BackgroundColor3 = frac > 0.8 and Color3.fromRGB(255, 60, 40) or Color3.fromRGB(255, 120, 50)
-	end
+function HUD.SetHeat(_frac: number?)
 end
 
 function HUD.SetCrosshairVisible(visible: boolean)
 	crosshair.Visible = visible
 	for _, f in ipairs(refs.Cross) do
-		f.Visible = visible
+		f.Visible = visible and not HUD._menuOpen
+	end
+end
+
+function HUD.SetMenuOpen(open: boolean)
+	HUD._menuOpen = open
+	for _, f in ipairs(refs.Cross) do
+		f.Visible = crosshair.Visible and not open
 	end
 end
 

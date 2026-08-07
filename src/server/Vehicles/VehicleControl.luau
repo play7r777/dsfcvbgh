@@ -50,11 +50,10 @@ local function fireCannon(player: Player)
 	local muzzle = state.Turret.Muzzle.WorldPosition
 	local direction = state.AimLook or state.Turret.Root.CFrame.LookVector
 
-	-- визуал для остальных клиентов
+	-- Визуал и звук всем клиентам, включая стрелка: локальный эффект танка
+	-- появляется только после серверного подтверждения выстрела.
 	for _, plr in ipairs(game:GetService("Players"):GetPlayers()) do
-		if plr ~= player then
-			ctx.Remotes.Get("FX_Shot"):FireClient(plr, player.UserId, "TankCannon", muzzle, direction)
-		end
+		ctx.Remotes.Get("FX_Shot"):FireClient(plr, player.UserId, "TankCannon", muzzle, direction)
 	end
 
 	local params = RaycastParams.new()

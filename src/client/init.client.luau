@@ -3,7 +3,15 @@
 -- Frontline Arena — клиентская точка входа: HUD -> Settings -> FX -> контроллеры.
 -- ============================================================================
 
+local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+
+local player = Players.LocalPlayer
+player.CameraMode = Enum.CameraMode.LockFirstPerson
+player.CameraMinZoomDistance = 0.5
+player.CameraMaxZoomDistance = 0.5
+UserInputService.MouseIconEnabled = false
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local Remotes = require(Shared.Net.Remotes)

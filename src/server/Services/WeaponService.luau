@@ -79,6 +79,7 @@ function WeaponService.ResetLoadout(player: Player)
 	st.ReloadWeapon = nil
 	st.Equipped = nil
 	st.Burst = 0
+	st.BurstLast = 0
 	for _, id in ipairs(require(Shared.Config.GameConfig).Loadout) do
 		local cfg = WeaponConfig.Get(id)
 		if cfg then
@@ -145,6 +146,10 @@ end
 function WeaponService.OnToolEquipped(player: Player, weaponId: string)
 	local st = states[player]
 	if st then
+		if st.Equipped ~= weaponId then
+			st.Burst = 0
+			st.BurstLast = 0
+		end
 		st.Equipped = weaponId
 	end
 end
@@ -274,7 +279,7 @@ local function onFire(player: Player, weaponId, origin, aimDir, seed, timestamp,
 	end
 
 	-- метка времени клиента (защита от replay-атак)
-	if type(timestamp) ~= "number" or math.abs(Workspace:GetServerTimeNow() - timestamp) > 1.0 then
+	if not Validation.IsFiniteNumber(timestamp) or math.abs(Workspace:GetServerTimeNow() - timestamp) > 1.0 then
 		return
 	end
 	-- origin рядом с головой персонажа
@@ -292,19 +297,17 @@ local function onFire(player: Player, weaponId, origin, aimDir, seed, timestamp,
 		return
 	end
 
-	-- разброс: сервер восстанавливает то же направление, что видел клиент
-	st.LastFireAt = now
-	if now - st.BurstLast > 0.4 then
-		st.Burst = 0
-	end
-	st.Burst += 1
-	st.BurstLast = now
-
-	local bloom = WeaponConfig.ComputeBloom(cfg, st.Burst)
-	if cfg.HipBloom and scoped ~= true then
-		bloom = cfg.HipBloom
-	end
+	-- Сервер авторитетно восстанавливает очередь по синхронизированному времени
+	-- ввода и сам рассчитывает штрафы движения/прыжка. Состояние изменяется только
+	-- после всех проверок, поэтому отклонённый пакет не влияет на следующий выстрел.
+	local recoveredBurst = WeaponConfig.RecoverBloom(cfg, st.Burst, now - st.BurstLast)
+	local movementAlpha = math.clamp(humanoid.MoveDirection.Magnitude, 0, 1)
+	local airborne = humanoid.FloorMaterial == Enum.Material.Air
+	local bloom = WeaponConfig.ComputeBloom(cfg, recoveredBurst + 1, scoped == true, movementAlpha, airborne)
 	local finalDir = WeaponConfig.ApplySpread(aimDir, seed, bloom)
+	st.LastFireAt = now
+	st.Burst = recoveredBurst + 1
+	st.BurstLast = now
 
 	ammo.Mag -= 1
 

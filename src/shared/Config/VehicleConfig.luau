@@ -61,6 +61,8 @@ local VehicleConfig = {
 			ReloadTime = 4.0,
 			MaxRange = 1800,
 			Splash = { Radius = 10, Damage = 130, Type = DamageTypes.HE },
+			SoundId = 142539065, -- Tank Attack_02, публичный Roblox audio
+			Sound = { Volume = 1.0, VolumeVariation = 0.025, PlaybackSpeedMin = 0.985, PlaybackSpeedMax = 1.015, RollOffMinDistance = 45, RollOffMaxDistance = 1500, Lifetime = 7 },
 		},
 	},
 

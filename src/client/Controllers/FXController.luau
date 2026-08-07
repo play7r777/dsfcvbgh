@@ -4,9 +4,10 @@
 --   * трассеры других игроков (серверный FX_Shot) с падением пули
 --   * подавление: трасса ПКМ рядом с камерой -> вспышка по краям экрана
 --   * искры от попаданий, вспышки
--- Звуки: слот SoundId в WeaponConfig — placeholder (0 = тишина).
+--   * пространственные звуки локальных и удалённых выстрелов из WeaponConfig
 -- ============================================================================
 
+local Debris = game:GetService("Debris")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 local Workspace = game:GetService("Workspace")
@@ -19,6 +20,7 @@ local WeaponConfig = require(Shared.Config.WeaponConfig)
 local FXController = {}
 
 local ctx
+local soundRng = Random.new()
 
 -- Стили трассеров: цвет и толщина (RPG — толстый дымный след)
 local TRACER_STYLE = {
@@ -32,6 +34,88 @@ local TRACER_STYLE = {
 
 local function tracerStyle(weaponId: string)
 	return TRACER_STYLE[weaponId] or { Color = Color3.fromRGB(255, 230, 160), Size = 0.28 }
+end
+
+local function toAssetUri(assetId): string?
+	if type(assetId) == "number" and assetId > 0 then
+		return "rbxassetid://" .. tostring(math.floor(assetId))
+	end
+	if type(assetId) == "string" then
+		if assetId:match("^rbxassetid://%d+$") then
+			return assetId
+		end
+		if assetId:match("^%d+$") then
+			return "rbxassetid://" .. assetId
+		end
+	end
+	return nil
+end
+
+-- Публичная точка воспроизведения нужна и локальному оружию, и FX_Shot.
+-- SoundId сохраняется как совместимый fallback; общий fallback используется,
+-- если конкретный профиль не указал пригодный asset id.
+function FXController.PlayWeaponSound(weaponId: string, position: Vector3)
+	if typeof(position) ~= "Vector3" then
+		return
+	end
+
+	local cfg = WeaponConfig.Get(weaponId)
+	local soundConfig
+	local assetId
+	if cfg then
+		soundConfig = cfg.Sound or {}
+		assetId = cfg.SoundId
+	elseif weaponId == "TankCannon" then
+		soundConfig = VehicleConfig.Tank.Cannon.Sound or {}
+		assetId = VehicleConfig.Tank.Cannon.SoundId
+	else
+		return
+	end
+	if type(soundConfig.Ids) == "table" and #soundConfig.Ids > 0 then
+		assetId = soundConfig.Ids[soundRng:NextInteger(1, #soundConfig.Ids)]
+	elseif soundConfig.Id ~= nil then
+		assetId = soundConfig.Id
+	end
+	local assetUri = toAssetUri(assetId) or toAssetUri(WeaponConfig.DefaultSoundId)
+	if not assetUri then
+		return
+	end
+
+	local listenerCamera = Workspace.CurrentCamera
+	if listenerCamera and (listenerCamera.CFrame.Position - position).Magnitude > (soundConfig.RollOffMaxDistance or 650) then
+		return
+	end
+
+	local holder = Instance.new("Part")
+	holder.Name = "WeaponSoundEmitter"
+	holder.Size = Vector3.one
+	holder.Anchored = true
+	holder.CanCollide = false
+	holder.CanQuery = false
+	holder.CanTouch = false
+	holder.Transparency = 1
+	holder.CFrame = CFrame.new(position)
+	holder.Parent = Workspace
+
+	local speedMin = soundConfig.PlaybackSpeedMin or 0.98
+	local speedMax = math.max(soundConfig.PlaybackSpeedMax or 1.02, speedMin)
+	local volumeVariation = math.clamp(soundConfig.VolumeVariation or 0.04, 0, 0.2)
+	local sound = Instance.new("Sound")
+	sound.Name = weaponId .. "Shot"
+	sound.SoundId = assetUri
+	sound.Volume = (soundConfig.Volume or 0.8) * soundRng:NextNumber(1 - volumeVariation, 1 + volumeVariation)
+	sound.PlaybackSpeed = soundRng:NextNumber(speedMin, speedMax)
+	sound.RollOffMode = Enum.RollOffMode.InverseTapered
+	sound.RollOffMinDistance = soundConfig.RollOffMinDistance or 15
+	sound.RollOffMaxDistance = soundConfig.RollOffMaxDistance or 650
+	sound.Parent = holder
+	sound.Ended:Once(function()
+		if holder.Parent then
+			holder:Destroy()
+		end
+	end)
+	sound:Play()
+	Debris:AddItem(holder, soundConfig.Lifetime or 6)
 end
 
 -- ---------------------------------------------------------------------------
@@ -119,6 +203,7 @@ local function onRemoteShot(userId: number, weaponId, origin: Vector3, direction
 		return
 	end
 	local style = tracerStyle(weaponId)
+	FXController.PlayWeaponSound(weaponId, origin)
 
 	local localChar = Players.LocalPlayer.Character
 	local localHead = localChar and localChar:FindFirstChild("Head")

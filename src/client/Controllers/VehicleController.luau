@@ -10,20 +10,40 @@ local RunService = game:GetService("RunService")
 local UserInputService = game:GetService("UserInputService")
 local Workspace = game:GetService("Workspace")
 
+local Shared = game:GetService("ReplicatedStorage"):WaitForChild("Shared")
+local VehicleConfig = require(Shared.Config.VehicleConfig)
+
 local VehicleController = {}
 
 local ctx
 local player = Players.LocalPlayer
 
 local currentVehicleId = nil -- id техники, в которой сидим
+local currentVehicleModel = nil
+local currentIsTank = false
 local turretConn = nil
+local visibilityConn = nil
 local lastAimSend = 0
+local nextCannonAt = 0
 
 local function clearDriving()
 	currentVehicleId = nil
+	currentIsTank = false
 	if turretConn then
 		turretConn:Disconnect()
 		turretConn = nil
+	end
+	if visibilityConn then
+		visibilityConn:Disconnect()
+		visibilityConn = nil
+	end
+	if currentVehicleModel then
+		for _, descendant in ipairs(currentVehicleModel:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				descendant.LocalTransparencyModifier = 0
+			end
+		end
+		currentVehicleModel = nil
 	end
 	ctx.HUD.SetVehicle(nil)
 end
@@ -43,7 +63,30 @@ local function onSeated(active: boolean, seat: VehicleSeat?)
 	end
 
 	currentVehicleId = vehicleId
-	local isTank = model:GetAttribute("VehicleType") == "Tank"
+	currentVehicleModel = model
+	currentIsTank = model:GetAttribute("VehicleType") == "Tank"
+	nextCannonAt = 0
+
+	-- LockFirstPerson остаётся привязан к Humanoid. Локально скрываем только те
+	-- детали техники, внутри которых находится камера, чтобы башня/корпус не
+	-- перекрывали обзор, не делая всю машину невидимой.
+	visibilityConn = RunService.RenderStepped:Connect(function()
+		local camera = Workspace.CurrentCamera
+		if not camera or currentVehicleModel ~= model then
+			return
+		end
+		local cameraPosition = camera.CFrame.Position
+		for _, descendant in ipairs(model:GetDescendants()) do
+			if descendant:IsA("BasePart") then
+				local localPosition = descendant.CFrame:PointToObjectSpace(cameraPosition)
+				local halfSize = descendant.Size / 2 + Vector3.new(0.35, 0.35, 0.35)
+				local inside = math.abs(localPosition.X) <= halfSize.X
+					and math.abs(localPosition.Y) <= halfSize.Y
+					and math.abs(localPosition.Z) <= halfSize.Z
+				descendant.LocalTransparencyModifier = inside and 1 or 0
+			end
+		end
+	end)
 
 	if turretConn then
 		turretConn:Disconnect()
@@ -51,7 +94,7 @@ local function onSeated(active: boolean, seat: VehicleSeat?)
 	end
 
 	-- Танк: башня следует за камерой, ЛКМ/F — выстрел
-	if isTank then
+	if currentIsTank then
 		turretConn = RunService.RenderStepped:Connect(function()
 			local cam = Workspace.CurrentCamera
 			if not cam then
@@ -64,17 +107,6 @@ local function onSeated(active: boolean, seat: VehicleSeat?)
 			end
 		end)
 
-		UserInputService.InputBegan:Connect(function(input, gameProcessed)
-			if gameProcessed or currentVehicleId ~= vehicleId then
-				return
-			end
-			if
-				input.UserInputType == Enum.UserInputType.MouseButton1
-				or input.KeyCode == Enum.KeyCode.F
-			then
-				ctx.Remotes.Get("Tank_Fire"):FireServer()
-			end
-		end)
 	end
 end
 
@@ -85,6 +117,21 @@ end
 -- ---------------------------------------------------------------------------
 function VehicleController.Init(deps)
 	ctx = deps
+
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if gameProcessed or not currentIsTank or not currentVehicleModel then
+			return
+		end
+		if input.UserInputType ~= Enum.UserInputType.MouseButton1 and input.KeyCode ~= Enum.KeyCode.F then
+			return
+		end
+		local now = os.clock()
+		if now < nextCannonAt then
+			return
+		end
+		nextCannonAt = now + VehicleConfig.Tank.Cannon.ReloadTime
+		ctx.Remotes.Get("Tank_Fire"):FireServer()
+	end)
 
 	-- события техники: HUD-снапшоты и уничтожения
 	ctx.Remotes.Get("Vehicle_Event").OnClientEvent:Connect(function(kind, vehicleId, payload, label)

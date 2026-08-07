@@ -1,6 +1,6 @@
 --!nonstrict
 -- ============================================================================
--- SettingsController — внутриигровые настройки (шестерёнка слева сверху):
+-- SettingsController — внутриигровые настройки (шестерёнка слева снизу):
 --   * зазор прицела (по умолчанию 4 px — маленький статичный крестик)
 --   * динамический прицел (расширяется при стрельбе) — ВЫКЛ по умолчанию
 --   * цвет прицела: белый / зелёный / жёлтый / красный
@@ -10,6 +10,9 @@
 
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local RunService = game:GetService("RunService")
+local TweenService = game:GetService("TweenService")
+local UserInputService = game:GetService("UserInputService")
 
 local SettingsController = {}
 
@@ -70,19 +73,22 @@ local function buildGui()
 	local gui = Instance.new("ScreenGui")
 	gui.Name = "ArenaSettings"
 	gui.ResetOnSpawn = false
+	gui.DisplayOrder = 10
 	gui.Parent = playerGui
 
 	local open = button(gui, {
 		Name = "OpenSettings",
-		Position = UDim2.new(0, 16, 0, 16),
-		Size = UDim2.fromOffset(150, 34),
-		Text = "⚙  НАСТРОЙКИ",
-		TextSize = 13,
+		AnchorPoint = Vector2.new(0, 1),
+		Position = UDim2.new(0, 16, 1, -16),
+		Size = UDim2.fromOffset(40, 40),
+		Text = "⚙",
+		TextSize = 22,
 	})
 
 	local panel = Instance.new("Frame")
 	panel.Name = "Panel"
-	panel.Position = UDim2.new(0, 16, 0, 58)
+	panel.AnchorPoint = Vector2.new(0, 1)
+	panel.Position = UDim2.new(0, 16, 1, -64)
 	panel.Size = UDim2.fromOffset(300, 240)
 	panel.BackgroundColor3 = Color3.fromRGB(14, 17, 14)
 	panel.BackgroundTransparency = 0.15
@@ -171,8 +177,42 @@ local function buildGui()
 	hint.Text = "Сохраняется автоматически (DataStore). Статичный прицел — классический крестик."
 	hint.Parent = panel
 
+	local targetRotation = 0
+	local panelOpen = false
+	local function setPanelOpen(opened: boolean)
+		local character = player.Character
+		if opened and character and character:GetAttribute("OperatingDrone") then
+			return
+		end
+		if panelOpen == opened then
+			return
+		end
+		panelOpen = opened
+		targetRotation += 360
+		TweenService:Create(open, TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			Rotation = targetRotation,
+		}):Play()
+		panel.Visible = panelOpen
+		ctx.HUD.SetMenuOpen(panelOpen)
+		UserInputService.MouseIconEnabled = panelOpen
+		UserInputService.MouseBehavior = panelOpen and Enum.MouseBehavior.Default or Enum.MouseBehavior.LockCenter
+	end
+
 	open.MouseButton1Click:Connect(function()
-		panel.Visible = not panel.Visible
+		setPanelOpen(not panelOpen)
+	end)
+	UserInputService.InputBegan:Connect(function(input, gameProcessed)
+		if not gameProcessed and input.KeyCode == Enum.KeyCode.M then
+			setPanelOpen(not panelOpen)
+		end
+	end)
+	RunService:BindToRenderStep("ArenaSettingsCursor", Enum.RenderPriority.Camera.Value + 2, function()
+		local character = player.Character
+		if panelOpen and character and character:GetAttribute("OperatingDrone") then
+			setPanelOpen(false)
+		elseif panelOpen then
+			UserInputService.MouseBehavior = Enum.MouseBehavior.Default
+		end
 	end)
 end
 

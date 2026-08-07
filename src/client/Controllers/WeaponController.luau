@@ -3,8 +3,8 @@
 -- WeaponController — клиентская сторона оружия.
 --   * мгновенный локальный трассер/звук (отзывчивость), сервер всё валидирует
 --   * детерминированный разброс по seed (клиент и сервер считают одинаково)
---   * отдача камеры ВВЕРХ: пружина, применяется ПОСЛЕ камер-скрипта
---     (BindToRenderStep Camera+1), с возвратом вниз
+--   * накопительная PUBG-подобная отдача: вертикальный рост, горизонтальный
+--     паттерн с вариацией и пружинный camera kick с плавным возвратом
 --   * прицеливание: СВД — оптика (FOV-зум + маска), прочее — AimFOV из настроек
 --   * прицел: статичный/динамический, зазор и цвет — из настроек (Settings)
 --   * инструменты: C4 (рейкаст до 4 м), детонатор, ПТ-мины
@@ -34,42 +34,22 @@ local current = nil -- активный инструмент: { Id, Cfg, ... }
 local firing = false
 local ammoCache = {} -- [weaponId] = { Mag, Reserve } (авторитет от сервера)
 local nextShotAt = 0
-local burst = 0
+local burst = 0 -- накопленные «выстрелы» bloom; может быть дробным при восстановлении
 local burstLast = 0
 
--- Отдача: состояние пружины (радианы)
-local RECOIL_K = 90 -- жёсткость возврата
-local RECOIL_D = 14 -- демпфирование
-local recoilP, recoilY = 0, 0 -- текущий сдвиг (тангаж вверх, рыскание)
+-- Отдача хранится как угловой offset камеры в радианах. На камеру применяется
+-- только дельта offset'а: это позволяет игроку тянуть мышь вниз и контролировать
+-- очередь, а не перезаписывает ввод абсолютным CFrame каждый кадр.
+local recoilTargetP, recoilTargetY = 0, 0
+local recoilP, recoilY = 0, 0
 local recoilVelP, recoilVelY = 0, 0
+local recoilAppliedP, recoilAppliedY = 0, 0
+local recoilShot = 0
+local recoilLast = 0
+local recoilPatternSign = 1
+local recoilProfile = nil
+local recoilCamera = cam
 
--- ---------------------------------------------------------------------------
--- Звук (placeholder: SoundId == 0 => тишина)
--- ---------------------------------------------------------------------------
-local function playSound(weaponId: string, position: Vector3)
-	local cfg = WeaponConfig.Get(weaponId)
-	if not cfg or not cfg.SoundId or cfg.SoundId == 0 then
-		return
-	end
-	local holder = Instance.new("Part")
-	holder.Anchored = true
-	holder.CanCollide = false
-	holder.CanQuery = false
-	holder.Transparency = 1
-	holder.CFrame = CFrame.new(position)
-	holder.Parent = Workspace
-	local sound = Instance.new("Sound")
-	sound.SoundId = "rbxassetid://" .. cfg.SoundId
-	sound.Volume = 0.7
-	sound.RollOffMaxDistance = 500
-	sound.Parent = holder
-	sound:Play()
-	task.delay(3, function()
-		if holder.Parent then
-			holder:Destroy()
-		end
-	end)
-end
 
 -- ---------------------------------------------------------------------------
 -- Прицеливание (ПКМ)
@@ -116,6 +96,55 @@ end
 local startReload
 
 -- ---------------------------------------------------------------------------
+-- Отдача
+-- ---------------------------------------------------------------------------
+local function addRecoil(cfg, humanoid: Humanoid, now: number)
+	local profile = cfg.Recoil
+	if not profile then
+		return
+	end
+
+	if now - recoilLast > (profile.RecoveryDelay or 0.15) then
+		recoilShot = 0
+		recoilPatternSign = rng:NextNumber() < 0.5 and -1 or 1
+	end
+	recoilShot += 1
+	if recoilShot > 1 and rng:NextNumber() < (profile.PatternChangeChance or 0) then
+		recoilPatternSign *= -1
+	end
+
+	local growth = math.min(1 + (recoilShot - 1) * (profile.GrowthPerShot or 0), profile.MaxGrowth or 1)
+	local stanceMultiplier = current and current.Scoped and (profile.ADSMultiplier or 1) or (profile.HipMultiplier or 1)
+	local movementAlpha = math.clamp(humanoid.MoveDirection.Magnitude, 0, 1)
+	local movementMultiplier = 1 + ((profile.MovementMultiplier or 1) - 1) * movementAlpha
+	local airborneMultiplier = humanoid.FloorMaterial == Enum.Material.Air and (profile.AirborneMultiplier or 1) or 1
+	local multiplier = growth * stanceMultiplier * movementMultiplier * airborneMultiplier
+
+	local vertical = rng:NextNumber(profile.VerticalMin or 0.5, profile.VerticalMax or profile.VerticalMin or 0.8) * multiplier
+	local patternValue = 0
+	local pattern = profile.Pattern
+	if type(pattern) == "table" and #pattern > 0 then
+		patternValue = pattern[((recoilShot - 1) % #pattern) + 1] * recoilPatternSign
+	else
+		patternValue = rng:NextNumber(-1, 1)
+	end
+	local jitter = rng:NextNumber(-1, 1) * (profile.HorizontalJitter or 0.3)
+	local horizontal = (patternValue + jitter) * (profile.Horizontal or 0.2) * multiplier
+
+	recoilTargetP = math.clamp(recoilTargetP + math.rad(vertical), 0, math.rad(profile.MaxVertical or 15))
+	recoilTargetY = math.clamp(recoilTargetY + math.rad(horizontal), -math.rad(profile.MaxHorizontal or 5), math.rad(profile.MaxHorizontal or 5))
+
+	-- Небольшой импульс поверх накопленной цели создаёт резкий camera kick,
+	-- после которого пружина стабилизируется на новом уровне отдачи.
+	local frequency = profile.SpringFrequency or 18
+	local kick = profile.CameraKick or 0.25
+	recoilVelP += math.rad(vertical) * frequency * kick
+	recoilVelY += math.rad(horizontal) * frequency * kick * 0.75
+	recoilLast = now
+	recoilProfile = profile
+end
+
+-- ---------------------------------------------------------------------------
 -- Выстрел
 -- ---------------------------------------------------------------------------
 local function tryFire()
@@ -136,6 +165,7 @@ local function tryFire()
 	end
 
 	local now = os.clock()
+	local shotTimestamp = Workspace:GetServerTimeNow()
 	local ammo = ammoCache[current.Id]
 	if not ammo then
 		ammo = { Mag = cfg.MagSize, Reserve = cfg.ReserveAmmo }
@@ -156,21 +186,19 @@ local function tryFire()
 	end
 	nextShotAt = now + 60 / cfg.RPM
 
+	cam = Workspace.CurrentCamera
 	if not cam then
-		cam = Workspace.CurrentCamera
+		return
 	end
 
-	-- разброс (те же правила, что на сервере)
-	if now - burstLast > 0.4 then
-		burst = 0
-	end
+	-- Разброс восстанавливается плавно после короткой паузы. Сервер считает
+	-- то же состояние по времени принятых выстрелов и остаётся авторитетным.
+	burst = WeaponConfig.RecoverBloom(cfg, burst, shotTimestamp - burstLast)
+	local movementAlpha = math.clamp(humanoid.MoveDirection.Magnitude, 0, 1)
+	local airborne = humanoid.FloorMaterial == Enum.Material.Air
+	local bloom = WeaponConfig.ComputeBloom(cfg, burst + 1, current.Scoped == true, movementAlpha, airborne)
 	burst += 1
-	burstLast = now
-
-	local bloom = WeaponConfig.ComputeBloom(cfg, burst)
-	if cfg.HipBloom and not current.Scoped then
-		bloom = cfg.HipBloom
-	end
+	burstLast = shotTimestamp
 	local seed = rng:NextInteger(1, 2 ^ 31 - 1)
 	local aimDir = cam.CFrame.LookVector
 	local finalDir = WeaponConfig.ApplySpread(aimDir, seed, bloom)
@@ -202,12 +230,9 @@ local function tryFire()
 	cast.OnHit:Connect(function(result)
 		ctx.FX.Impact(result.Position, result.Normal)
 	end)
-	playSound(current.Id, origin)
+	ctx.FX.PlayWeaponSound(current.Id, origin)
 
-	-- ОТДАЧА: пружина ВВЕРХ (положительный тангаж) + лёгкий случайный увод
-	local recoil = cfg.Recoil or { Kick = 0.8, Yaw = 0.2 }
-	recoilVelP += math.rad(recoil.Kick) * math.sqrt(RECOIL_K)
-	recoilVelY += rng:NextNumber(-1, 1) * math.rad(recoil.Yaw) * math.sqrt(RECOIL_K)
+	addRecoil(cfg, humanoid, now)
 
 	-- перегрев ПКМ (зеркало; сервер поправит)
 	if cfg.Overheat then
@@ -225,7 +250,7 @@ local function tryFire()
 	end
 
 	-- серверу: вектор + timestamp + seed
-	ctx.Remotes.Get("Weapon_Fire"):FireServer(current.Id, origin, aimDir, seed, Workspace:GetServerTimeNow(), current.Scoped == true)
+	ctx.Remotes.Get("Weapon_Fire"):FireServer(current.Id, origin, aimDir, seed, shotTimestamp, current.Scoped == true)
 end
 
 -- ---------------------------------------------------------------------------
@@ -328,6 +353,10 @@ local function trackTool(tool: Tool)
 	end
 
 	tool.Equipped:Connect(function()
+		burst = 0
+		burstLast = 0
+		recoilShot = 0
+		recoilLast = 0
 		current = {
 			Id = id,
 			Cfg = WeaponConfig.Get(id),
@@ -370,25 +399,49 @@ end
 function WeaponController.Init(deps)
 	ctx = deps
 
-	-- Отдача применяется ПОСЛЕ стандартного камер-скрипта (иначе он её затирает)
+	-- Отдача применяется ПОСЛЕ стандартного камер-скрипта (иначе он её затирает).
 	RunService:BindToRenderStep("ArenaRecoil", Enum.RenderPriority.Camera.Value + 1, function(dt)
-		if recoilP == 0 and recoilY == 0 and recoilVelP == 0 and recoilVelY == 0 then
+		local profile = recoilProfile
+		if not profile then
 			return
 		end
-		-- пружина к нулю
-		recoilVelP += (-RECOIL_K * recoilP - RECOIL_D * recoilVelP) * dt
-		recoilVelY += (-RECOIL_K * recoilY - RECOIL_D * recoilVelY) * dt
+		dt = math.min(dt, 1 / 30)
+
+		if os.clock() - recoilLast > (profile.RecoveryDelay or 0.15) then
+			local returnAlpha = 1 - math.exp(-(profile.RecoverySpeed or 7) * dt)
+			recoilTargetP += (0 - recoilTargetP) * returnAlpha
+			recoilTargetY += (0 - recoilTargetY) * returnAlpha
+		end
+
+		local frequency = profile.SpringFrequency or 18
+		local damping = profile.SpringDamping or 0.92
+		local stiffness = frequency * frequency
+		local drag = 2 * damping * frequency
+		recoilVelP += (stiffness * (recoilTargetP - recoilP) - drag * recoilVelP) * dt
+		recoilVelY += (stiffness * (recoilTargetY - recoilY) - drag * recoilVelY) * dt
 		recoilP += recoilVelP * dt
 		recoilY += recoilVelY * dt
-		if math.abs(recoilP) < 1e-4 and math.abs(recoilVelP) < 1e-4 then
-			recoilP, recoilVelP = 0, 0
+
+		if math.abs(recoilTargetP) < 1e-5 and math.abs(recoilP) < 1e-5 and math.abs(recoilVelP) < 1e-4 then
+			recoilTargetP, recoilP, recoilVelP = 0, 0, 0
 		end
-		if math.abs(recoilY) < 1e-4 and math.abs(recoilVelY) < 1e-4 then
-			recoilY, recoilVelY = 0, 0
+		if math.abs(recoilTargetY) < 1e-5 and math.abs(recoilY) < 1e-5 and math.abs(recoilVelY) < 1e-4 then
+			recoilTargetY, recoilY, recoilVelY = 0, 0, 0
 		end
+
 		local camera = Workspace.CurrentCamera
-		if camera then
-			camera.CFrame = camera.CFrame * CFrame.Angles(recoilP, recoilY, 0)
+		if not camera then
+			return
+		end
+		if camera ~= recoilCamera then
+			recoilCamera = camera
+			recoilAppliedP, recoilAppliedY = 0, 0
+		end
+		local deltaP = recoilP - recoilAppliedP
+		local deltaY = recoilY - recoilAppliedY
+		if deltaP ~= 0 or deltaY ~= 0 then
+			camera.CFrame = camera.CFrame * CFrame.Angles(deltaP, deltaY, 0)
+			recoilAppliedP, recoilAppliedY = recoilP, recoilY
 		end
 	end)
 
