@@ -132,14 +132,14 @@ local FOOT_PATHS = {
 }
 
 local TERRAIN_RISES = {
-	{ Center = point(-235, 150), Size = Vector1.new(92, 69), Height = 16, Levels = 5, Angle = math.rad(14) },
-	{ Center = point(470, -300), Size = Vector2.new(185, 138), Height = 16, Levels = 5, Angle = math.rad(-166) },
-	{ Center = point(-125, 535), Size = Vector2.new(190, 120), Height = 12, Levels = 4, Angle = math.rad(-10) },
-	{ Center = point(125, -535), Size = Vector2.new(190, 120), Height = 12, Levels = 4, Angle = math.rad(170) },
-	{ Center = point(-680, 390), Size = Vector2.new(145, 112), Height = 10, Levels = 4, Angle = math.rad(28) },
-	{ Center = point(680, -390), Size = Vector2.new(145, 112), Height = 10, Levels = 4, Angle = math.rad(-152) },
-	{ Center = point(-430, -330), Size = Vector2.new(140, 102), Height = 8, Levels = 3, Angle = math.rad(-24) },
-	{ Center = point(430, 330), Size = Vector2.new(140, 102), Height = 8, Levels = 3, Angle = math.rad(156) },
+	{ Center = point(-235, 150), Size = Vector2.new(92, 69), Height = 16, Levels = 5, Angle = math.rad(14) },
+	{ Center = point(235, -150), Size = Vector2.new(92, 69), Height = 16, Levels = 5, Angle = math.rad(-166) },
+	{ Center = point(-62, 267), Size = Vector2.new(95, 60), Height = 12, Levels = 4, Angle = math.rad(-10) },
+	{ Center = point(62, -267), Size = Vector2.new(95, 60), Height = 12, Levels = 4, Angle = math.rad(170) },
+	{ Center = point(-340, 195), Size = Vector2.new(72, 56), Height = 10, Levels = 4, Angle = math.rad(28) },
+	{ Center = point(340, -195), Size = Vector2.new(72, 56), Height = 10, Levels = 4, Angle = math.rad(-152) },
+	{ Center = point(-215, -165), Size = Vector2.new(70, 51), Height = 8, Levels = 3, Angle = math.rad(-24) },
+	{ Center = point(215, 165), Size = Vector2.new(70, 51), Height = 8, Levels = 3, Angle = math.rad(156) },
 }
 
 local function zigzagPoints(xBase: number): { Vector3 }
