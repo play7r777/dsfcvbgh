@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameConfig = require(ReplicatedStorage:WaitForChild("Shared").Config.GameConfig)
+local MeshLibrary = require(ReplicatedStorage:WaitForChild("Shared").Util.MeshLibrary)
 local MapAssets = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("map")
 
 local MapBuilder = {}
@@ -187,7 +188,10 @@ local function placeModel(name: string, cframe: CFrame, parent: Instance)
 		clone.CFrame = cframe
 	end
 	
-	-- Убеждаемся, что все части прочно закреплены (задача 3)
+	-- Красим по именам материалов (как в DWAS MeshLibrary)
+	MeshLibrary.ApplyFallbackColors(clone)
+
+	-- Якорим все части
 	for _, desc in ipairs(clone:GetDescendants()) do
 		if desc:IsA("BasePart") then
 			desc.Anchored = true

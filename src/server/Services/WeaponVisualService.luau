@@ -14,6 +14,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local Shared = ReplicatedStorage:WaitForChild("Shared")
 local WeaponConfig = require(Shared.Config.WeaponConfig)
+local MeshLibrary = require(Shared.Util.MeshLibrary)
 
 local WeaponVisualService = {}
 
@@ -101,6 +102,9 @@ function WeaponVisualService.Attach(player: Player, weaponId: string)
 	end
 	
 	model.Name = "Wep_" .. weaponId
+
+	-- Красим по именам материалов OBJ (как в DWAS MeshLibrary)
+	MeshLibrary.ApplyFallbackColors(model)
 
 	local handle = model.PrimaryPart or model:FindFirstChild("Handle") or model:FindFirstChildWhichIsA("BasePart")
 	if not handle then

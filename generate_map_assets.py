@@ -2,7 +2,7 @@ import bpy
 import math
 import os
 
-OUT_DIR = "assets/fbx/map"
+OUT_DIR = "assets/models/map"
 os.makedirs(OUT_DIR, exist_ok=True)
 
 # ---------------------------------------------------------------------------
@@ -177,14 +177,14 @@ def export_and_render():
             o.select_set(True)
         bpy.context.view_layer.objects.active = objs[0]
         
-        path = os.path.join(OUT_DIR, f"{name}.fbx")
-        bpy.ops.export_scene.fbx(
+        path = os.path.join(OUT_DIR, f"{name}.obj")
+        bpy.ops.wm.obj_export(
             filepath=os.path.abspath(path),
-            use_selection=True,
-            add_leaf_bones=False,
-            apply_scale_options="FBX_SCALE_ALL"
+            export_materials=True,
+            export_triangulated_mesh=True,
+            export_selected_objects=True
         )
-        print(f"Exported {name}.fbx")
+        print(f"Exported {name}.obj")
         
     export_group(tree_objs, "Tree")
     export_group(bush_objs, "Bush")
