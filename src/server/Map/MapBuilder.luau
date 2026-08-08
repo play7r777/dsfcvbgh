@@ -174,6 +174,19 @@ local function makeFolder(name: string, parent: Instance): Folder
 	return folder
 end
 
+local function placeModel(name: string, cframe: CFrame, parent: Instance)
+	local model = MapAssets:FindFirstChild(name)
+	if model then
+		local clone = model:Clone()
+		if clone:IsA("Model") then
+			clone:PivotTo(cframe)
+		elseif clone:IsA("BasePart") then
+			clone.CFrame = cframe
+		end
+		clone.Parent = parent
+	end
+end
+
 local function fill(cframe: CFrame, size: Vector3, material: any)
 	Terrain:FillBlock(cframe, size, material)
 end
@@ -658,19 +671,6 @@ local function buildCommandPost(parent: Instance)
 	end
 	part("RadioPlatform", Vector3.new(9, 0.7, 9), CFrame.new(towerCenter + Vector3.new(0, 22, 0)), METAL, COLORS.Metal, parent, true)
 	part("RadioMast", Vector3.new(0.6, 17, 0.6), CFrame.new(towerCenter + Vector3.new(0, 30.5, 0)), METAL, COLORS.Rust, parent, false)
-end
-
-local function placeModel(name: string, cframe: CFrame, parent: Instance)
-	local model = MapAssets:FindFirstChild(name)
-	if model then
-		local clone = model:Clone()
-		if clone:IsA("Model") then
-			clone:PivotTo(cframe)
-		elseif clone:IsA("BasePart") then
-			clone.CFrame = cframe
-		end
-		clone.Parent = parent
-	end
 end
 
 local function buildRuinedBuilding(center: Vector3, yaw: number, parent: Instance)
