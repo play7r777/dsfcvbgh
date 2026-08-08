@@ -9,6 +9,7 @@ local Workspace = game:GetService("Workspace")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
 
 local GameConfig = require(ReplicatedStorage:WaitForChild("Shared").Config.GameConfig)
+local MapAssets = ReplicatedStorage:WaitForChild("Assets"):WaitForChild("map")
 
 local MapBuilder = {}
 
@@ -558,21 +559,19 @@ local function buildTrenchPolyline(points: { Vector3 }, sandbagSide: Vector3, pa
 		local a = points[index]
 		local b = points[index + 1]
 		local delta = Vector3.new(b.X - a.X, 0, b.Z - a.Z)
+		local distance = delta.Magnitude
 		local midpoint = (a + b) / 2 - Vector3.new(0, depth / 2, 0)
-		fill(CFrame.lookAt(midpoint, midpoint + delta), Vector3.new(width, depth, delta.Magnitude + width), AIR)
-		segmentPart(
-			"Duckboard",
-			a,
-			b,
-			width - 1,
-			0.3,
-			GROUND_Y - depth + 0.18,
-			WOOD,
-			COLORS.Wood,
-			parent,
-			true
-		)
-		buildSandbagLine(a, b, sandbagSide, parent)
+		
+		-- Carve terrain for the trench path
+		fill(CFrame.lookAt(midpoint, midpoint + delta), Vector3.new(width, depth, distance + width), AIR)
+		
+		-- Place 3D Trench models along the line instead of procedural sandbags
+		local numTrenches = math.floor(distance / 8)
+		for i = 0, numTrenches - 1 do
+			local offset = i * 8 + 4
+			local tCFrame = CFrame.lookAt(a + delta.Unit * offset, b)
+			placeModel("Trench", tCFrame, parent)
+		end
 	end
 
 	local firstDirection = (points[1] - points[2]).Unit
@@ -661,32 +660,21 @@ local function buildCommandPost(parent: Instance)
 	part("RadioMast", Vector3.new(0.6, 17, 0.6), CFrame.new(towerCenter + Vector3.new(0, 30.5, 0)), METAL, COLORS.Rust, parent, false)
 end
 
-local function buildRuinedBuilding(center: Vector3, yaw: number, parent: Instance)
-	local base = CFrame.new(center) * CFrame.Angles(0, yaw, 0)
-	part("RuinFloor", Vector3.new(72, 0.4, 56), base * CFrame.new(0, 0.2, 0), CONCRETE, COLORS.DarkConcrete, parent, true)
-	wallPart("RuinWall", base, Vector3.new(31, 9, 2), CFrame.new(-20, 4.5, -27), BRICK, COLORS.Brick, parent)
-	wallPart("RuinWall", base, Vector3.new(22, 5, 2), CFrame.new(25, 2.5, -27) * CFrame.Angles(0, math.rad(4), 0), BRICK, COLORS.Brick, parent)
-	wallPart("RuinWall", base, Vector3.new(2, 11, 28), CFrame.new(-35, 5.5, -13), BRICK, COLORS.Brick, parent)
-	wallPart("RuinWall", base, Vector3.new(2, 6, 20), CFrame.new(-35, 3, 18) * CFrame.Angles(0, math.rad(-5), 0), BRICK, COLORS.Brick, parent)
-	wallPart("RuinWall", base, Vector3.new(2, 8, 32), CFrame.new(35, 4, 11), CONCRETE, COLORS.Concrete, parent)
-	wallPart("RuinWall", base, Vector3.new(28, 7, 2), CFrame.new(20, 3.5, 27), CONCRETE, COLORS.Concrete, parent)
-	wallPart("RuinWall", base, Vector3.new(18, 4, 2), CFrame.new(-25, 2, 27), CONCRETE, COLORS.Concrete, parent)
-	wallPart("RuinInterior", base, Vector3.new(2, 6, 29), CFrame.new(3, 3, -9), CONCRETE, COLORS.Concrete, parent)
-	wallPart("RuinSlab", base, Vector3.new(25, 1, 18), CFrame.new(-18, 7.5, -13) * CFrame.Angles(math.rad(-9), 0, math.rad(12)), CONCRETE, COLORS.DarkConcrete, parent)
-
-	for index = 1, 8 do
-		local x = -27 + (index % 4) * 15
-		local z = 12 + math.floor((index - 1) / 4) * 9
-		part(
-			"Rubble",
-			Vector3.new(3 + index % 3, 1.2 + index % 2, 2.5 + (index + 1) % 3),
-			base * CFrame.new(x, 0.8, z) * CFrame.Angles(math.rad(index * 7), math.rad(index * 23), math.rad(index * 4)),
-			index % 2 == 0 and BRICK or CONCRETE,
-			index % 2 == 0 and COLORS.Brick or COLORS.Concrete,
-			parent,
-			true
-		)
+local function placeModel(name: string, cframe: CFrame, parent: Instance)
+	local model = MapAssets:FindFirstChild(name)
+	if model then
+		local clone = model:Clone()
+		if clone:IsA("Model") then
+			clone:PivotTo(cframe)
+		elseif clone:IsA("BasePart") then
+			clone.CFrame = cframe
+		end
+		clone.Parent = parent
 	end
+end
+
+local function buildRuinedBuilding(center: Vector3, yaw: number, parent: Instance)
+	placeModel("House", CFrame.new(center) * CFrame.Angles(0, yaw, 0), parent)
 end
 
 local function buildBunker(center: Vector3, facing: Vector3, parent: Instance)
@@ -828,19 +816,7 @@ local function buildHedgehog(position: Vector3, yaw: number, parent: Instance)
 end
 
 local function buildDeadTree(position: Vector3, yaw: number, parent: Instance)
-	local trunk = part(
-		"DeadTree",
-		Vector3.new(9, 1.5, 1.5),
-		CFrame.new(position + Vector3.new(0, 4.3, 0)) * CFrame.Angles(0, yaw, math.rad(90)),
-		WOOD,
-		COLORS.Charred,
-		parent,
-		true
-	)
-	trunk.Shape = Enum.PartType.Cylinder
-	local branchCenter = position + Vector3.new(0, 6.5, 0)
-	segmentPart("DeadBranch", branchCenter, branchCenter + Vector3.new(3.5, 0, 4), 0.7, 0.7, GROUND_Y + 6.5, WOOD, COLORS.Charred, parent, false)
-	segmentPart("DeadBranch", branchCenter, branchCenter + Vector3.new(-4, 0, -2.5), 0.6, 0.6, GROUND_Y + 7.2, WOOD, COLORS.Charred, parent, false)
+	placeModel("Tree", CFrame.new(position) * CFrame.Angles(0, yaw, 0), parent)
 end
 
 local function buildCrateStack(position: Vector3, yaw: number, parent: Instance)
@@ -898,7 +874,12 @@ local function scatterBattlefieldCover(parent: Instance)
 				elseif coverType == 6 then
 					buildCrateStack(position, yaw, parent)
 				else
-					buildDeadTree(position, yaw, parent)
+					local subType = rng:NextInteger(1, 2)
+					if subType == 1 then
+						buildDeadTree(position, yaw, parent)
+					else
+						placeModel("Bush", CFrame.new(position) * CFrame.Angles(0, yaw, 0), parent)
+					end
 				end
 				table.insert(placedPositions, position)
 			end
